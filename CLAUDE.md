@@ -287,7 +287,7 @@ LockpawHelper/                      (sibling of Lockpaw/) — lid-closed mode's 
 - **`OUTREACH-DRAFTS-2026-08.md`** — outreach drafts + send statuses (gitignored/local). August round sent 2026-08-18.
 - **`SECURITY.md`** — Security policy: threat-model caveat, latest-release-only support, private vulnerability reporting (enabled on the repo 2026-06-12)
 - **`.github/ISSUE_TEMPLATE/`** — Bug report and feature request templates (YAML)
-- **`.github/FUNDING.yml`** — Buy Me a Coffee link
+- **`.github/FUNDING.yml`** — GitHub Sponsors + Buy Me a Coffee. Settings → About's left button opens GitHub Sponsors (was Buy Me a Coffee until 2026-10-13). Sponsor tiers are thanks only: no licence, by choice
 - **`.github/dependabot.yml`** — monthly GitHub Actions version bumps (actions only — no tracked Package.swift/Package.resolved, so SPM/Sparkle can't be tracked; xcodeproj is gitignored)
 
 ## Repo-level directories

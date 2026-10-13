@@ -56,7 +56,7 @@ final class UpdateCheckViewModel: NSObject, ObservableObject, SPUUpdaterDelegate
     }
 }
 
-private let buyMeACoffeeURL = URL(string: "https://www.buymeacoffee.com/eriknielsen")!
+private let sponsorsURL = URL(string: "https://github.com/sponsors/sorkila")!
 private let creatorURL = URL(string: "https://sorkila.com")!
 private let settingsAccentColor = Color("LockpawTeal")
 
@@ -906,9 +906,9 @@ struct SettingsView: View {
                 SettingsRow("Support Lockpaw", subtitle: "Everything in Lockpaw is free and stays free. Supporters get a few thank-yous: extra mascots, seasonal skins, and no yearly ask.") {
                     HStack(spacing: 8) {
                         Button {
-                            NSWorkspace.shared.open(buyMeACoffeeURL)
+                            NSWorkspace.shared.open(sponsorsURL)
                         } label: {
-                            Text("Buy Me a Coffee")
+                            Text("Sponsor on GitHub")
                                 .padding(.horizontal, 8)
                         }
                         .buttonStyle(.bordered)

@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- Settings → About links GitHub Sponsors instead of Buy Me a Coffee.
+
 ## [1.6.0] - 2026-10-07
 
 ### Added
