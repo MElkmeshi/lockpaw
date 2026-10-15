@@ -50,7 +50,7 @@
 |--------|-----|
 | Lock | Your hotkey (default `Cmd+Shift+L`) |
 | Quick unlock | Same hotkey, or rest a finger on Touch ID |
-| Fallback unlock | Click *Authenticate with Touch ID* at the bottom of the lock screen |
+| Fallback unlock | Click *Use Password* at the bottom of the lock screen and type your Mac password |
 | Settings | Menu bar → Settings… |
 | Change hotkey | Settings → Shortcuts → click to record |
 | Change mascot, use your own image, or turn it off | Settings → Lock Screen → Mascot |
@@ -150,7 +150,7 @@ The lock screen is intentionally minimal. Near-black canvas. Subtle radial glow.
 
 **Sleep prevention** — `IOPMAssertion` keeps the Mac awake while locked. With the lid closed that isn't enough, so the optional `LockpawHelper` LaunchDaemon (registered with `SMAppService`) sets `pmset disablesleep` while locked and clears it on unlock, at boot, and a minute after the app goes away. Its XPC interface is that one switch, and both ends check each other's code signature. See [SECURITY.md](SECURITY.md).
 
-**Auth** — while locked, a biometrics-only `LAContext` is already armed behind the overlay, so the first finger press unlocks with nothing to click. The button path uses `.deviceOwnerAuthentication` for Touch ID with password fallback, rate-limited to a 30s cooldown after 3 failed attempts. A rejected finger on the armed sensor costs no attempt — it may be a palm or a bag strap, and Touch ID enforces its own lockout in hardware.
+**Auth** — while locked, a biometrics-only `LAContext` is already armed behind the overlay, so the first finger press unlocks with nothing to click. The fallback is a password field on the lock screen itself, checked against your login password through Open Directory and rate-limited to a 30s cooldown after 3 failed attempts. The cover never comes down for it, and while the field is open Lockpaw runs in kiosk mode, so app switching and Force Quit stay blocked even though macOS hides typed keys from the input tap. A rejected finger on the armed sensor costs no attempt — it may be a palm or a bag strap, and Touch ID enforces its own lockout in hardware.
 
 **Auto-updates** — Sparkle framework checks for updates automatically. Appcast hosted at getlockpaw.com.
 
@@ -199,8 +199,8 @@ Found a lock or auth bypass anyway? Please [report it privately](SECURITY.md).
 
 ```
 lockpaw://lock              Lock the screen
-lockpaw://unlock            Unlock with Touch ID
-lockpaw://unlock-password   Unlock with password
+lockpaw://unlock            Show the password field (Touch ID is always live)
+lockpaw://unlock-password   Show the password field
 lockpaw://toggle            Toggle lock state
 ```
 
@@ -213,7 +213,7 @@ Lockpaw/
 ├─ LockpawApp                     Entry, MenuBarExtra, AppDelegate, onboarding
 ├─ Controllers/
 │  ├─ LockController              State machine, lock/unlock orchestration
-│  ├─ Authenticator               LAContext · armed Touch ID · password fallback
+│  ├─ Authenticator               LAContext · armed Touch ID · password check
 │  ├─ InputBlocker                CGEventTap · keyboard/scroll blocking
 │  ├─ HotkeyManager               CGEventTap · global hotkey detection
 │  ├─ OverlayWindowManager        NSWindow · multi-display · shielding level

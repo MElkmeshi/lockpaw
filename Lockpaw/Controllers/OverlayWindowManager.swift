@@ -41,9 +41,10 @@ class OverlayWindowManager {
     /// Display setup the current overlays were built for — see ScreenLayout.
     private var builtLayout: ScreenLayout?
     private var kioskKeyMonitor: Any?
-    /// Kiosk mode's own flag. The activation policy can't tell: Settings also makes the
-    /// app regular while its window is open.
-    private var kioskActive = false
+    /// The activation policy kiosk mode replaced, or nil when kiosk mode is off. Settings
+    /// also makes the app regular while its window is open, so leaving kiosk mode restores
+    /// whatever was there rather than assuming accessory.
+    private var policyBeforeKiosk: NSApplication.ActivationPolicy?
 
     private let shieldLevel = NSWindow.Level(rawValue: Int(CGShieldingWindowLevel()))
 
@@ -108,7 +109,7 @@ class OverlayWindowManager {
     /// switched apps — so Lockpaw becomes a regular app for as long as the field is up.
     /// `.hideDock` keeps the Dock icon that comes with that out of sight.
     func enterKioskMode(screenAt index: Int) {
-        kioskActive = true
+        if policyBeforeKiosk == nil { policyBeforeKiosk = NSApp.activationPolicy() }
         NSApp.setActivationPolicy(.regular)
         focus(screenAt: index)
         NSApp.presentationOptions = PasswordEntryPolicy.kioskOptions
@@ -130,10 +131,10 @@ class OverlayWindowManager {
             NSEvent.removeMonitor(monitor)
             kioskKeyMonitor = nil
         }
-        guard kioskActive else { return }
-        kioskActive = false
+        guard let previous = policyBeforeKiosk else { return }
+        policyBeforeKiosk = nil
         NSApp.presentationOptions = []
-        NSApp.setActivationPolicy(.accessory)
+        NSApp.setActivationPolicy(previous)
         blockSystemDialogs()
     }
 
