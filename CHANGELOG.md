@@ -1,10 +1,19 @@
 # Changelog
 
-## [Unreleased]
+## [1.6.1] - 2026-10-15
+
+### Security
+
+- **The unlock dialog let the keyboard through to the apps behind the lock screen** ([GHSA-3p84-637v-ppf5](https://github.com/sorkila/lockpaw/security/advisories/GHSA-3p84-637v-ppf5)). While the Touch ID / password dialog was open, the cover was lowered and keystrokes reached macOS, so anyone at a locked Mac could Cmd+Tab to another app, force-quit Lockpaw, or switch Spaces without authenticating. Every version up to 1.6.0 is affected; please update. The password fallback is now a field on the lock screen itself: the cover stays up, and while you type, app switching, Force Quit and Command shortcuts are blocked. Touch ID works as before. Reported and fixed by @beggan78.
 
 ### Changed
 
+- The fallback unlock is **Use Password**, a field on the lock screen, instead of the system dialog. Esc closes it, and it closes itself after 30 seconds without typing. Unlocking with an Apple Watch is no longer offered, since only the system dialog could do it; Touch ID, your password and the hotkey still unlock.
 - Settings → About links GitHub Sponsors instead of Buy Me a Coffee.
+
+### Fixed
+
+- "Red panda" no longer truncates in the supporter mascot picker.
 
 ## [1.6.0] - 2026-10-07
 
