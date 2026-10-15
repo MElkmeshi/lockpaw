@@ -1207,6 +1207,9 @@ private struct SettingsSegmentedControl<Value: Hashable>: View {
                         .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(isSelected ? settingsAccentColor : Color.secondary)
                         .lineLimit(1)
+                        // A label longer than its equal share ("Red panda") takes the width it
+                        // needs and the others give way, instead of truncating.
+                        .fixedSize()
                         .padding(.horizontal, 12)
                         .frame(maxWidth: .infinity, minHeight: 24)
                         .contentShape(Rectangle())
