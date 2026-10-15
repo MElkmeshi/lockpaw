@@ -37,6 +37,11 @@ class LockController: ObservableObject {
     /// precise state for the tick.
     @Published private(set) var passiveAuthLive = false
 
+    /// The overlay showing the lock screen's password field, or nil when it is closed. The
+    /// armed Touch ID path is off and the app runs in kiosk mode for as long as it is set.
+    @Published private(set) var passwordEntryScreen: Int?
+    var passwordEntryActive: Bool { passwordEntryScreen != nil }
+
     /// The precise state: an evaluation is armed right now. Internal — never drives the UI.
     private var passiveEvaluationInFlight = false
 
@@ -68,6 +73,7 @@ class LockController: ObservableObject {
     private var authenticationInProgress = false
     private var sessionWasLost = false
     private var lastAuthFailTime: Date?
+    private var lastPasswordActivity = Date.distantPast
     private var pingGate = PingGate()
     private var passiveAuthTask: Task<Void, Never>?
     /// Bumped by every arm and disarm so a late-resolving evaluation can tell it is stale.
@@ -107,11 +113,12 @@ class LockController: ObservableObject {
             guard let self else { return }
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                // Mid-auth the tap runs in gesturesOnly mode; it needs rebuilding too, or a
-                // failed attempt returns to .locked with a dead tap.
+                // Mid-check the tap needs rebuilding too, or a failed attempt returns to
+                // .locked with a dead tap.
                 if self.state == .unlocking { self.inputBlocker.reinstall() }
                 guard self.state == .locked else { return }
                 self.inputBlocker.reinstall()
+                self.endPasswordEntry()
                 self.overlayManager.blockSystemDialogs()
                 self.armPassiveAuthAfterInterruption()
             }
@@ -126,12 +133,10 @@ class LockController: ObservableObject {
                 if self.state == .locked || self.state == .unlocking {
                     self.sessionWasLost = true
                     self.disarmPassiveAuth()
+                    self.endPasswordEntry()
                     if self.authenticationInProgress {
-                        self.authenticator.cancelPending()
                         self.authenticationInProgress = false
                         self.isAuthenticating = false
-                        self.overlayManager.blockSystemDialogs()
-                        self.inputBlocker.startBlocking()
                         self.transitionTo(.locked)
                         self.lastError = "Session interrupted — try again"
                         self.scheduleErrorClear()
@@ -169,7 +174,7 @@ class LockController: ObservableObject {
         let urlActions: [(Notification.Name, LockState, (LockController) -> Void)] = [
             (.lockpawLock, .unlocked, { $0.lock() }),
             (.lockpawUnlock, .locked, { $0.requestUnlock() }),
-            (.lockpawUnlockPassword, .locked, { $0.requestPasswordUnlock() }),
+            (.lockpawUnlockPassword, .locked, { $0.requestUnlock() }),
         ]
         urlSchemeObservers = urlActions.map { name, requiredState, action in
             NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
@@ -304,89 +309,51 @@ class LockController: ObservableObject {
         unlock()
     }
 
-    /// Fallback unlock via Touch ID / Mac password. `screenIndex` is the overlay the
-    /// request came from, so the system dialog opens on the screen the user is looking at.
+    /// Fallback unlock: show the password field on the lock screen. Every explicit unlock
+    /// request lands here — the button, the menu, `lockpaw://unlock` and `unlock-password`,
+    /// and the hotkey when authentication is required. Touch ID needs no request; it is
+    /// armed while locked. `screenIndex` is the overlay the request came from, so in Mirror
+    /// mode the field opens on the screen the user is looking at.
+    ///
+    /// Nothing here lowers the overlay or stops the input tap. See `PasswordEntryPolicy`
+    /// for why the system dialog this replaces was a bypass.
     func requestUnlock(onScreen screenIndex: Int? = nil) {
-        guard state == .locked, !authenticationInProgress else { return }
-
-        // Rate limit after 3 failures
-        if failCount >= Constants.Timing.maxAuthAttempts, let lastFail = lastAuthFailTime,
-           Date().timeIntervalSince(lastFail) < Constants.Timing.authRateLimitCooldown {
-            let remaining = Int(Constants.Timing.authRateLimitCooldown - Date().timeIntervalSince(lastFail))
-            lastError = "Too many attempts. Wait \(remaining)s."
-            scheduleErrorClear()
-            return
-        }
+        guard state == .locked, !authenticationInProgress, !passwordEntryActive else { return }
+        guard !refuseIfRateLimited() else { return }
 
         disarmPassiveAuth()
-        guard transitionTo(.unlocking) else { return }
-        // Only once the attempt is really starting: a refused request must not move focus,
-        // since nothing would move it back.
-        if let screenIndex { overlayManager.focus(screenAt: screenIndex) }
-        authenticationInProgress = true
-        isAuthenticating = true
+        let screen = screenIndex ?? 0
+        passwordEntryScreen = screen
+        lastPasswordActivity = Date()
         lastError = nil
-
-        overlayManager.allowSystemDialogs()
-        inputBlocker.startBlocking(gesturesOnly: true)
-
-        Task { @MainActor in
-            let authenticated = await authenticator.authenticate()
-
-            guard state == .unlocking else {
-                authenticationInProgress = false
-                isAuthenticating = false
-                overlayManager.blockSystemDialogs()
-                inputBlocker.startBlocking()
-                return
-            }
-
-            authenticationInProgress = false
-            isAuthenticating = false
-
-            if authenticated {
-                NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
-                unlockSucceeded = true
-                try? await Task.sleep(nanoseconds: Constants.Timing.unlockSuccessAnimNs)
-                guard !Task.isCancelled else { return }
-                unlock()
-            } else {
-                handleAuthFailure()
-            }
-        }
+        overlayManager.enterKioskMode(screenAt: screen)
     }
 
-    func requestPasswordUnlock() {
-        guard state == .locked, !authenticationInProgress else { return }
+    /// The field is idle-checked from the lock tick, so typing keeps it open.
+    func notePasswordActivity() {
+        lastPasswordActivity = Date()
+    }
 
-        if failCount >= Constants.Timing.maxAuthAttempts, let lastFail = lastAuthFailTime,
-           Date().timeIntervalSince(lastFail) < Constants.Timing.authRateLimitCooldown {
-            let remaining = Int(Constants.Timing.authRateLimitCooldown - Date().timeIntervalSince(lastFail))
-            lastError = "Too many attempts. Wait \(remaining)s."
-            scheduleErrorClear()
-            return
-        }
+    /// Escape, the idle timeout, or the rate limit kicking in. Hands the sensor back.
+    func cancelPasswordEntry() {
+        guard passwordEntryActive, !authenticationInProgress else { return }
+        endPasswordEntry()
+        armPassiveAuth()
+    }
 
-        disarmPassiveAuth()
+    func submitPassword(_ password: String) {
+        guard state == .locked, passwordEntryActive, !authenticationInProgress else { return }
+        guard !refuseIfRateLimited() else { return }
         guard transitionTo(.unlocking) else { return }
         authenticationInProgress = true
         isAuthenticating = true
         lastError = nil
 
-        overlayManager.allowSystemDialogs()
-        inputBlocker.startBlocking(gesturesOnly: true)
-
         Task { @MainActor in
-            let authenticated = await authenticator.authenticateWithPassword()
+            let authenticated = await authenticator.verifyPassword(password)
 
-            guard state == .unlocking else {
-                authenticationInProgress = false
-                isAuthenticating = false
-                overlayManager.blockSystemDialogs()
-                inputBlocker.startBlocking()
-                return
-            }
-
+            // A session switch mid-check already put us back to .locked.
+            guard state == .unlocking else { return }
             authenticationInProgress = false
             isAuthenticating = false
 
@@ -468,6 +435,7 @@ class LockController: ObservableObject {
             return
         }
         inputBlocker.reinstall()
+        endPasswordEntry()
         overlayManager.blockSystemDialogs()
         armPassiveAuthAfterInterruption()
     }
@@ -478,11 +446,29 @@ class LockController: ObservableObject {
         lastAuthFailTime = Date()
         lastError = failCount >= Constants.Timing.maxAuthAttempts ? "Too many attempts. Wait \(Int(Constants.Timing.authRateLimitCooldown)) seconds." : "Try again"
 
-        overlayManager.blockSystemDialogs()
-        inputBlocker.startBlocking()
         transitionTo(.locked)
         scheduleErrorClear()
-        armPassiveAuth()
+        // Stay in the field for another try, unless the cooldown just started — then close
+        // it. `armPassiveAuth` respects the cooldown, so the sensor stays cold until it ends.
+        if failCount >= Constants.Timing.maxAuthAttempts {
+            cancelPasswordEntry()
+        }
+    }
+
+    /// True (and the error shown) when the 30s cooldown after three failures is running.
+    private func refuseIfRateLimited() -> Bool {
+        guard failCount >= Constants.Timing.maxAuthAttempts, let lastFail = lastAuthFailTime,
+              Date().timeIntervalSince(lastFail) < Constants.Timing.authRateLimitCooldown else { return false }
+        let remaining = Int(Constants.Timing.authRateLimitCooldown - Date().timeIntervalSince(lastFail))
+        lastError = "Too many attempts. Wait \(remaining)s."
+        scheduleErrorClear()
+        return true
+    }
+
+    private func endPasswordEntry() {
+        guard passwordEntryActive else { return }
+        passwordEntryScreen = nil
+        overlayManager.exitKioskMode()
     }
 
     private func scheduleErrorClear() {
@@ -509,6 +495,7 @@ class LockController: ObservableObject {
         if agentAttention { SupportAskController.shared.noteUnlockAfterPing() }
         presentationController.stop()
         disarmPassiveAuth(endingSession: true)
+        endPasswordEntry()
         stopAccessibilityMonitoring()
         stopTimer()
         errorClearTask?.cancel()
@@ -525,6 +512,7 @@ class LockController: ObservableObject {
     private func forceUnlock() {
         presentationController.stop()
         disarmPassiveAuth(endingSession: true)
+        endPasswordEntry()
         authenticationInProgress = false
         isAuthenticating = false
         authenticator.cancelPending()
@@ -551,6 +539,9 @@ class LockController: ObservableObject {
         // refused to arm (because an unlock was committed) still invalidated that unlock,
         // and the lock screen sat there with the mascot mid-success until the hotkey was
         // used. Measured: the tick landed 351ms into the 400ms success window.
+        // The password field holds activation for its kiosk mode; an armed evaluation would
+        // hand it to the LocalAuthentication agent and lift the kiosk options mid-typing.
+        guard !passwordEntryActive else { return }
         guard PassiveAuthPolicy.shouldArm(
             state: state,
             unlockCommitted: unlockSucceeded,
@@ -642,6 +633,14 @@ class LockController: ObservableObject {
     /// Rides the one-second lock tick, which is already running for the elapsed clock.
     private func tickPassiveAuth() {
         guard state == .locked else { return }
+
+        if passwordEntryActive {
+            if PasswordEntryPolicy.hasExpired(lastActivity: lastPasswordActivity, now: Date()) {
+                logger.info("Password field idle — closing it and re-arming Touch ID")
+                cancelPasswordEntry()
+            }
+            return
+        }
 
         if passiveEvaluationInFlight {
             // Secure input hides keystrokes from event taps (the #10 bypass), so an armed

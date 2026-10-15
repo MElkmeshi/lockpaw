@@ -40,6 +40,7 @@ class OverlayWindowManager {
     private var onCoverOpaque: (() -> Void)?
     /// Display setup the current overlays were built for — see ScreenLayout.
     private var builtLayout: ScreenLayout?
+    private var kioskKeyMonitor: Any?
 
     private let shieldLevel = NSWindow.Level(rawValue: Int(CGShieldingWindowLevel()))
 
@@ -64,6 +65,7 @@ class OverlayWindowManager {
     }
 
     func dismissOverlay(animated: Bool = false) {
+        exitKioskMode()
         stopObservingScreenChanges()
         stopObservingSessionChanges()
         stopCursorConcealment()
@@ -98,8 +100,30 @@ class OverlayWindowManager {
         }
     }
 
-    func allowSystemDialogs() {
-        for window in windows { window.level = .statusBar }
+    /// For the lock-screen password field on screen `index`. Presentation options are
+    /// ignored for an accessory (LSUIElement) app — measured on macOS 26, Cmd+Tab still
+    /// switched apps — so Lockpaw becomes a regular app for as long as the field is up.
+    /// `.hideDock` keeps the Dock icon that comes with that out of sight.
+    func enterKioskMode(screenAt index: Int) {
+        NSApp.setActivationPolicy(.regular)
+        focus(screenAt: index)
+        NSApp.presentationOptions = PasswordEntryPolicy.kioskOptions
+        if kioskKeyMonitor == nil {
+            kioskKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+                PasswordEntryPolicy.swallowsKeyEquivalent(modifiers: event.modifierFlags) ? nil : event
+            }
+        }
+    }
+
+    func exitKioskMode() {
+        if let monitor = kioskKeyMonitor {
+            NSEvent.removeMonitor(monitor)
+            kioskKeyMonitor = nil
+        }
+        guard NSApp.activationPolicy() != .accessory else { return }
+        NSApp.presentationOptions = []
+        NSApp.setActivationPolicy(.accessory)
+        blockSystemDialogs()
     }
 
     /// Auth is over and the lock resumes — also hands key status back to the primary,
@@ -116,10 +140,8 @@ class OverlayWindowManager {
     }
 
     /// Hand key status to the overlay on screen `index` (the order `contentFactory` was
-    /// called in) for one auth attempt. The fallback-auth dialog opens on the screen
-    /// holding the key window, so in Mirror mode a click on a secondary display's
-    /// Authenticate button otherwise raised the dialog on the primary — out of view,
-    /// which read as the button doing nothing.
+    /// called in) for one auth attempt, so in Mirror mode the password field takes the
+    /// keyboard on the screen whose button was clicked.
     func focus(screenAt index: Int) {
         guard windows.indices.contains(index) else { return }
         focusedIndex = index

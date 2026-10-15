@@ -1,4 +1,5 @@
 import LocalAuthentication
+import OpenDirectory
 import os.log
 
 private let logger = Logger(subsystem: "com.eriknielsen.lockpaw", category: "Authenticator")
@@ -7,65 +8,23 @@ private let logger = Logger(subsystem: "com.eriknielsen.lockpaw", category: "Aut
 class Authenticator {
     private var activeContext: LAContext?
 
-    /// Authenticate with Touch ID, with password fallback via system dialog.
-    func authenticate(reason: String = "Unlock Lockpaw") async -> Bool {
-        cancelPending()
-
-        let context = LAContext()
-        context.localizedCancelTitle = "Cancel"
-        context.localizedFallbackTitle = "Use Password\u{2026}"
-        activeContext = context
-
-        defer { if activeContext === context { activeContext = nil } }
-
-        var error: NSError?
-        guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error) else {
-            logger.error("Auth not available: \(error?.localizedDescription ?? "unknown")")
-            return false
-        }
-
-        // Evaluate off MainActor to avoid deadlock — system dialog needs main thread
-        return await Task.detached { [context] in
+    /// Check the login password typed into the lock screen's own field. Deliberately not
+    /// an `LAContext` prompt: that sheet is drawn by another process, so showing it meant
+    /// lowering the overlay and stopping the input tap — which is what let Cmd+Tab and
+    /// Force Quit through while it was up. Open Directory does its own failed-attempt
+    /// throttling on top of the lock controller's cooldown.
+    func verifyPassword(_ password: String) async -> Bool {
+        guard !password.isEmpty else { return false }
+        let user = NSUserName()
+        return await Task.detached {
             do {
-                return try await context.evaluatePolicy(
-                    .deviceOwnerAuthentication,
-                    localizedReason: reason
-                )
+                let node = try ODNode(session: ODSession.default(), type: ODNodeType(kODNodeTypeAuthentication))
+                let record = try node.record(withRecordType: kODRecordTypeUsers, name: user, attributes: nil)
+                try record.verifyPassword(password)
+                return true
             } catch {
                 await MainActor.run {
-                    logger.info("Auth cancelled or failed: \(error.localizedDescription)")
-                }
-                return false
-            }
-        }.value
-    }
-
-    /// Authenticate with macOS password (system dialog, user can click "Use Password").
-    func authenticateWithPassword(reason: String = "Enter your password to unlock Lockpaw") async -> Bool {
-        cancelPending()
-
-        let context = LAContext()
-        context.localizedCancelTitle = "Cancel"
-        context.localizedFallbackTitle = ""
-        activeContext = context
-
-        defer { if activeContext === context { activeContext = nil } }
-
-        var error: NSError?
-        guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error) else {
-            logger.error("Password auth not available: \(error?.localizedDescription ?? "unknown")")
-            return false
-        }
-
-        return await Task.detached { [context] in
-            do {
-                return try await context.evaluatePolicy(
-                    .deviceOwnerAuthentication,
-                    localizedReason: reason
-                )
-            } catch {
-                await MainActor.run {
-                    logger.info("Password auth cancelled or failed: \(error.localizedDescription)")
+                    logger.info("Password verification failed: \(error.localizedDescription)")
                 }
                 return false
             }
@@ -88,9 +47,8 @@ class Authenticator {
     /// asking the user to reach for a button. The system prompt this opens sits behind the
     /// shield-level overlay and is never seen.
     ///
-    /// Biometry only. The password fallback stays on `authenticate()`, which needs the
-    /// overlay lowered and input unblocked for its dialog — neither of which is safe to do
-    /// for the whole locked session.
+    /// Biometry only. The password fallback is `verifyPassword(_:)`, typed into the lock
+    /// screen itself.
     func armBiometrics(reason: String = "Unlock Lockpaw") async -> PassiveAuthResult {
         cancelPending()
 

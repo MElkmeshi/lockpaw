@@ -171,17 +171,15 @@ struct LockScreenView: View {
                                     .progressViewStyle(.circular)
                                     .scaleEffect(1.2)
                                     .tint(Color("LockpawTeal"))
-                                VStack(spacing: 4) {
-                                    Text("Use Touch ID or enter your Mac password")
-                                        .font(.lockCaption)
-                                        .foregroundStyle(.white.opacity(0.55))
-                                    Text("Check for a system dialog")
-                                        .font(.lockCaption)
-                                        .foregroundStyle(.white.opacity(0.3))
-                                }
-                                .tracking(0.5)
+                                Text("Checking password\u{2026}")
+                                    .font(.lockCaption)
+                                    .foregroundStyle(.white.opacity(0.55))
+                                    .tracking(0.5)
                             }
                             .transition(.opacity)
+                        } else if controller.passwordEntryScreen == screenIndex {
+                            LockPasswordField(controller: controller)
+                                .transition(.opacity)
                         } else {
                             // Fallback auth is always visible — no tap-to-reveal.
                             VStack(spacing: 16) {
@@ -194,7 +192,7 @@ struct LockScreenView: View {
                                     NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now)
                                     controller.requestUnlock(onScreen: screenIndex)
                                 } label: {
-                                    Text(requiresAuthenticationToUnlock ? "Authenticate to Unlock" : "Authenticate with Touch ID")
+                                    Text("Use Password")
                                         .font(.lockLabel)
                                         .foregroundStyle(.white.opacity(hoveringAuth ? 0.6 : 0.4))
                                         .tracking(0.3)
@@ -212,7 +210,7 @@ struct LockScreenView: View {
                                 }
                                 .buttonStyle(.plain)
                                 .onHover { hoveringAuth = $0 }
-                                .accessibilityLabel("Authenticate with Touch ID or Mac password")
+                                .accessibilityLabel("Unlock with your Mac password")
                             }
                             .transition(.opacity)
                         }
@@ -221,6 +219,7 @@ struct LockScreenView: View {
                     .padding(.bottom, compact ? 16 : 40)
                     .animation(Constants.Anim.gentle, value: controller.isAuthenticating)
                     .animation(Constants.Anim.gentle, value: controller.unlockSucceeded)
+                    .animation(Constants.Anim.gentle, value: controller.passwordEntryScreen)
                     .offset(x: shakeOffset)
                 }
             }
@@ -344,5 +343,55 @@ struct LockScreenView: View {
         }
         .opacity(appeared ? 1 : 0)
         .allowsHitTesting(false)
+    }
+}
+
+/// The fallback unlock, typed into the lock screen itself — the overlay stays at shield
+/// level and the input tap stays on throughout. See `PasswordEntryPolicy`.
+private struct LockPasswordField: View {
+    @ObservedObject var controller: LockController
+    @State private var password = ""
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Text("Enter your Mac password \u{00B7} esc to cancel")
+                .font(.lockCaption)
+                .foregroundStyle(.white.opacity(0.35))
+                .tracking(0.5)
+
+            SecureField("Password", text: $password)
+                .textFieldStyle(.plain)
+                .font(.lockLabel)
+                .foregroundStyle(.white.opacity(0.8))
+                .multilineTextAlignment(.center)
+                .frame(width: 220, height: 44)
+                .padding(.horizontal, 12)
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(.ultraThinMaterial.opacity(0.5))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .strokeBorder(.white.opacity(0.08), lineWidth: 0.5)
+                )
+                .focused($focused)
+                .onSubmit {
+                    let typed = password
+                    password = ""
+                    controller.submitPassword(typed)
+                }
+                .onExitCommand {
+                    password = ""
+                    controller.cancelPasswordEntry()
+                }
+                .onChange(of: password) { _, _ in controller.notePasswordActivity() }
+                .accessibilityLabel("Mac password")
+        }
+        .onAppear {
+            // Kiosk mode activates the app in the same turn that mounts this view; focus
+            // once that activation has landed and the overlay is key.
+            DispatchQueue.main.async { focused = true }
+        }
     }
 }

@@ -17,12 +17,6 @@ struct MenuBarView: View {
                 Button {
                     controller.requestUnlock()
                 } label: {
-                    Label("Unlock with Touch ID", systemImage: "touchid")
-                }
-
-                Button {
-                    controller.requestPasswordUnlock()
-                } label: {
                     Label("Unlock with Password", systemImage: "keyboard")
                 }
 
