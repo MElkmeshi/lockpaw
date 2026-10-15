@@ -347,7 +347,8 @@ struct LockScreenView: View {
 }
 
 /// The fallback unlock, typed into the lock screen itself — the overlay stays at shield
-/// level and the input tap stays on throughout. See `PasswordEntryPolicy`.
+/// level. Kiosk mode, not the input tap, guards the keyboard while this is focused; see
+/// `PasswordEntryPolicy`.
 private struct LockPasswordField: View {
     @ObservedObject var controller: LockController
     @State private var password = ""

@@ -7,8 +7,11 @@ final class PasswordEntryPolicyTests: XCTestCase {
         // Cmd+Tab and Cmd+Opt+Esc both reached other apps while the old system sheet was up.
         XCTAssertTrue(options.contains(.disableProcessSwitching))
         XCTAssertTrue(options.contains(.disableForceQuit))
-        XCTAssertTrue(options.contains(.disableSessionTermination))
         XCTAssertTrue(options.contains(.disableHideApplication))
+    }
+
+    func testSessionTerminationIsLeftToTheQuitGuard() {
+        XCTAssertFalse(PasswordEntryPolicy.kioskOptions.contains(.disableSessionTermination))
     }
 
     func testKioskOptionsAreAValidCombination() {

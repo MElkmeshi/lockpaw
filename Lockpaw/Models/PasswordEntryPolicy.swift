@@ -3,14 +3,24 @@ import AppKit
 /// Rules for the in-overlay password field, kept out of the controller so they can be
 /// unit-tested.
 ///
-/// The field replaces the system Touch ID / password sheet. That sheet needed the overlay
-/// lowered and the input tap off, and macOS turns on secure input while it is up, which
-/// hides keystrokes from the tap — so Cmd+Tab, Force Quit (Cmd+Opt+Esc) and anything else
-/// reached the apps behind the cover for as long as the sheet stayed open. The field never
-/// lowers the overlay or stops the tap. Typing into it still turns on secure input, so
-/// while it is focused the shortcuts that matter are refused by the system instead, via
-/// these presentation options. They only apply while Lockpaw is the active app — and the
-/// field can only be focused (so secure input can only be on) while Lockpaw is active.
+/// The field replaces the system Touch ID / password dialog. That dialog needed the overlay
+/// lowered and the input tap letting keys through, and macOS turns on secure input while it
+/// is up, which hides keystrokes from the tap anyway — so Cmd+Tab, Force Quit (Cmd+Opt+Esc)
+/// and anything else reached the apps behind the cover for as long as it stayed open.
+///
+/// The field never lowers the overlay, and the tap stays installed, but the tap is not the
+/// keyboard guard while the field is focused: typing into it turns on secure input, so the
+/// tap sees no keys at all. During entry the guards are these presentation options, which
+/// the system enforces itself, and the Command-key filter below. The options only apply
+/// while Lockpaw is the active app — and the field can only be focused (so secure input can
+/// only be on) while Lockpaw is active.
+///
+/// `.disableForceQuit` is deliberate even though Force Quit is the usual way out of a hung
+/// app: with the field up, Lockpaw is frontmost, so Cmd+Opt+Esc then Return force-quits
+/// Lockpaw itself — the reported bypass, minus the visible dialog. The exposure is bounded
+/// to while the field is open (it closes itself after 30 idle seconds). Session
+/// termination is left alone: `TerminationPolicy` already refuses a logout's quit while
+/// locked.
 enum PasswordEntryPolicy {
     /// `.disableProcessSwitching` and `.hideMenuBar` both require `.hideDock`.
     static let kioskOptions: NSApplication.PresentationOptions = [
@@ -18,7 +28,6 @@ enum PasswordEntryPolicy {
         .hideMenuBar,
         .disableProcessSwitching,
         .disableForceQuit,
-        .disableSessionTermination,
         .disableHideApplication,
         .disableAppleMenu
     ]

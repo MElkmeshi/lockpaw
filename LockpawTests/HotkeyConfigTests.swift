@@ -1,5 +1,6 @@
 import XCTest
 import AppKit
+import Carbon
 @testable import Lockpaw
 
 final class HotkeyConfigTests: XCTestCase {
@@ -70,5 +71,25 @@ final class HotkeyConfigTests: XCTestCase {
         // Cmd+Shift+K (keyCode 40) is not a system shortcut
         let result = HotkeyConfig.systemConflict(keyCode: 40, modifiers: [.command, .shift])
         XCTAssertNil(result)
+    }
+
+    // MARK: - matches (the password field's local key monitor)
+
+    func testHotkeyMatchesWithItsModifiers() {
+        XCTAssertTrue(HotkeyConfig.matches(keyCode: 37, modifierFlags: [.command, .shift], savedKeyCode: 37, savedModifiers: cmdKey | shiftKey))
+    }
+
+    func testHotkeyNeedsEverySavedModifier() {
+        XCTAssertFalse(HotkeyConfig.matches(keyCode: 37, modifierFlags: [.command], savedKeyCode: 37, savedModifiers: cmdKey | shiftKey))
+        XCTAssertFalse(HotkeyConfig.matches(keyCode: 37, modifierFlags: [.command, .option], savedKeyCode: 37, savedModifiers: cmdKey | controlKey))
+    }
+
+    func testHotkeyNeedsTheSavedKey() {
+        XCTAssertFalse(HotkeyConfig.matches(keyCode: 38, modifierFlags: [.command, .shift], savedKeyCode: 37, savedModifiers: cmdKey | shiftKey))
+    }
+
+    func testExtraModifiersStillMatchLikeTheTap() {
+        // The event tap only checks that saved modifiers are held; the monitor must agree.
+        XCTAssertTrue(HotkeyConfig.matches(keyCode: 37, modifierFlags: [.command, .shift, .option], savedKeyCode: 37, savedModifiers: cmdKey | shiftKey))
     }
 }

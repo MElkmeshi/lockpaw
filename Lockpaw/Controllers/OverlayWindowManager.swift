@@ -41,6 +41,9 @@ class OverlayWindowManager {
     /// Display setup the current overlays were built for — see ScreenLayout.
     private var builtLayout: ScreenLayout?
     private var kioskKeyMonitor: Any?
+    /// Kiosk mode's own flag. The activation policy can't tell: Settings also makes the
+    /// app regular while its window is open.
+    private var kioskActive = false
 
     private let shieldLevel = NSWindow.Level(rawValue: Int(CGShieldingWindowLevel()))
 
@@ -105,12 +108,19 @@ class OverlayWindowManager {
     /// switched apps — so Lockpaw becomes a regular app for as long as the field is up.
     /// `.hideDock` keeps the Dock icon that comes with that out of sight.
     func enterKioskMode(screenAt index: Int) {
+        kioskActive = true
         NSApp.setActivationPolicy(.regular)
         focus(screenAt: index)
         NSApp.presentationOptions = PasswordEntryPolicy.kioskOptions
         if kioskKeyMonitor == nil {
             kioskKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-                PasswordEntryPolicy.swallowsKeyEquivalent(modifiers: event.modifierFlags) ? nil : event
+                // The unlock hotkey still works with the field focused: secure input hides
+                // it from the hotkey tap, so it is recognised here instead.
+                if HotkeyConfig.matches(keyCode: Int(event.keyCode), modifierFlags: event.modifierFlags) {
+                    NotificationCenter.default.post(name: .toggleLockpaw, object: nil)
+                    return nil
+                }
+                return PasswordEntryPolicy.swallowsKeyEquivalent(modifiers: event.modifierFlags) ? nil : event
             }
         }
     }
@@ -120,7 +130,8 @@ class OverlayWindowManager {
             NSEvent.removeMonitor(monitor)
             kioskKeyMonitor = nil
         }
-        guard NSApp.activationPolicy() != .accessory else { return }
+        guard kioskActive else { return }
+        kioskActive = false
         NSApp.presentationOptions = []
         NSApp.setActivationPolicy(.accessory)
         blockSystemDialogs()

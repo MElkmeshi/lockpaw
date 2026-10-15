@@ -54,6 +54,23 @@ struct HotkeyConfig {
         UserDefaults.standard.set(value, forKey: requireAuthenticationToUnlockKey)
     }
 
+    /// Same rule as the hotkey's event tap: the saved key, with every saved modifier held.
+    /// For key events that reach the app directly — the lock-screen password field turns
+    /// on secure input, which hides them from the tap.
+    static func matches(
+        keyCode: Int,
+        modifierFlags flags: NSEvent.ModifierFlags,
+        savedKeyCode: Int = HotkeyConfig.keyCode,
+        savedModifiers: Int = HotkeyConfig.modifiers
+    ) -> Bool {
+        guard keyCode == savedKeyCode else { return false }
+        if savedModifiers & cmdKey != 0, !flags.contains(.command) { return false }
+        if savedModifiers & shiftKey != 0, !flags.contains(.shift) { return false }
+        if savedModifiers & optionKey != 0, !flags.contains(.option) { return false }
+        if savedModifiers & controlKey != 0, !flags.contains(.control) { return false }
+        return true
+    }
+
     // MARK: - System Shortcut Conflict Detection
 
     /// Returns a description of the conflicting system shortcut, or nil if no conflict.

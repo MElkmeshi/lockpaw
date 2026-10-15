@@ -315,34 +315,50 @@ class LockController: ObservableObject {
     /// armed while locked. `screenIndex` is the overlay the request came from, so in Mirror
     /// mode the field opens on the screen the user is looking at.
     ///
-    /// Nothing here lowers the overlay or stops the input tap. See `PasswordEntryPolicy`
-    /// for why the system dialog this replaces was a bypass.
+    /// Nothing here lowers the overlay. See `PasswordEntryPolicy` for why the system
+    /// dialog this replaces was a bypass, and what guards the keyboard instead.
     func requestUnlock(onScreen screenIndex: Int? = nil) {
-        guard state == .locked, !authenticationInProgress, !passwordEntryActive else { return }
+        guard state == .locked, !authenticationInProgress else { return }
+        let screen = screenIndex ?? 0
+
+        // Mirror mode: a click on another display's button moves the open field there.
+        if let current = passwordEntryScreen {
+            guard let screenIndex, screenIndex != current else { return }
+            passwordEntryScreen = screenIndex
+            overlayManager.focus(screenAt: screenIndex)
+            notePasswordActivity()
+            return
+        }
+
         guard !refuseIfRateLimited() else { return }
 
         disarmPassiveAuth()
-        let screen = screenIndex ?? 0
         passwordEntryScreen = screen
-        lastPasswordActivity = Date()
         lastError = nil
         overlayManager.enterKioskMode(screenAt: screen)
+        notePasswordActivity()
     }
 
-    /// The field is idle-checked from the lock tick, so typing keeps it open.
+    /// The field is idle-checked from the lock tick, so typing keeps it open. Typing also
+    /// counts as presence for fade to black: secure input hides these keystrokes from the
+    /// input tap, which is what normally reports them.
     func notePasswordActivity() {
         lastPasswordActivity = Date()
+        NotificationCenter.default.post(name: .lockpawPhysicalInput, object: nil)
     }
 
-    /// Escape, the idle timeout, or the rate limit kicking in. Hands the sensor back.
+    /// Escape, the idle timeout, or the rate limit kicking in. The lock tick re-arms Touch
+    /// ID within a second rather than this call: the field may still hold secure input in
+    /// this turn, and arming would record it as already on and skip the tick's check.
     func cancelPasswordEntry() {
         guard passwordEntryActive, !authenticationInProgress else { return }
         endPasswordEntry()
-        armPassiveAuth()
     }
 
     func submitPassword(_ password: String) {
         guard state == .locked, passwordEntryActive, !authenticationInProgress else { return }
+        // An empty Return is impatience, not an attempt; it must not spend the budget.
+        guard !password.isEmpty else { return }
         guard !refuseIfRateLimited() else { return }
         guard transitionTo(.unlocking) else { return }
         authenticationInProgress = true
