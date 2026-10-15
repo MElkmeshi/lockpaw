@@ -360,7 +360,18 @@ private struct LockPasswordField: View {
                 .foregroundStyle(.white.opacity(0.35))
                 .tracking(0.5)
 
-            SecureField("Password", text: $password)
+            // Drawn as an overlay, not as the field's prompt: macOS ignores a prompt's color
+            // and uses its own placeholder grey, which on this background reads as typed text.
+            SecureField(text: $password, prompt: Text("")) {
+                Text("Password")
+            }
+                .overlay {
+                    if password.isEmpty {
+                        Text("Password")
+                            .foregroundStyle(.white.opacity(0.25))
+                            .allowsHitTesting(false)
+                    }
+                }
                 .textFieldStyle(.plain)
                 .font(.lockLabel)
                 .foregroundStyle(.white.opacity(0.8))
