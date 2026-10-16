@@ -5,7 +5,7 @@ import os.log
 private let logger = Logger(subsystem: "com.eriknielsen.lockpaw", category: "AgentSleep")
 
 /// "Sleep when agents finish", app side. Tracks agent sessions from activity reports and
-/// pings for the whole life of the app (a session that started before the lock counts),
+/// pings (working, running a tool, waiting on the user, finished) for the whole life of the app (a session that started before the lock counts),
 /// and while locked runs `AgentSleepPolicy` on every report and on a slow tick. The
 /// policy decides; this class only gathers the inputs and carries out the actions.
 @MainActor
@@ -17,6 +17,8 @@ final class AgentSleepController {
     private var locked = false
     private var timer: Timer?
     private var observers: [Any] = []
+    private var mouseMonitors: [Any] = []
+    private var lastPresence = Date.distantPast
     private var releaseHolds: (() -> Void)?
     private var restoreHolds: (() -> Void)?
 
@@ -44,15 +46,53 @@ final class AgentSleepController {
             }
         })
         // Hardware keyboard and scroll input while locked (InputBlocker's tap, throttled),
-        // and typing in the lock screen's password field.
+        // and typing in the lock screen's password field. The mouse never reaches this
+        // channel, so it has monitors of its own while locked (`startMouseMonitors`).
         observers.append(NotificationCenter.default.addObserver(
             forName: .lockpawPhysicalInput, object: nil, queue: .main
         ) { [weak self] _ in
-            Task { @MainActor in
-                guard let self, self.locked else { return }
-                self.policyState = AgentSleepPolicy.notingPresence(self.policyState, now: Date())
-            }
+            Task { @MainActor in self?.notePresence() }
         })
+    }
+
+    private func notePresence() {
+        guard locked else { return }
+        policyState = AgentSleepPolicy.notingPresence(policyState, now: Date())
+    }
+
+    /// The pointer moving or clicking over the lock screen is someone at the Mac too.
+    /// Physical events only, the same rule fade to black uses: agent automation nudging
+    /// the mouse must not hold the Mac awake.
+    private func startMouseMonitors() {
+        stopMouseMonitors()
+        let mask: NSEvent.EventTypeMask = [.mouseMoved, .leftMouseDown, .rightMouseDown, .otherMouseDown]
+        let handle: (NSEvent) -> Void = { [weak self] event in
+            guard PresentationController.isPhysical(event) else { return }
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                // Mouse moves arrive at event rate; once a second is plenty for a
+                // minutes-long delay.
+                let now = Date()
+                guard now.timeIntervalSince(self.lastPresence) >= 1 else { return }
+                self.lastPresence = now
+                self.notePresence()
+            }
+        }
+        // Global: while the Touch ID agent holds activation. Local: while Lockpaw does.
+        if let global = NSEvent.addGlobalMonitorForEvents(matching: mask, handler: handle) {
+            mouseMonitors.append(global)
+        }
+        if let local = NSEvent.addLocalMonitorForEvents(matching: mask, handler: { event in
+            handle(event)
+            return event
+        }) {
+            mouseMonitors.append(local)
+        }
+    }
+
+    private func stopMouseMonitors() {
+        for monitor in mouseMonitors { NSEvent.removeMonitor(monitor) }
+        mouseMonitors.removeAll()
     }
 
     // MARK: - Lock lifecycle
@@ -63,6 +103,7 @@ final class AgentSleepController {
         restoreHolds = restore
         locked = true
         policyState = AgentSleepPolicy.State()
+        startMouseMonitors()
         evaluate()
         timer?.invalidate()
         timer = Timer.scheduledTimer(withTimeInterval: Constants.Timing.agentSleepCheckInterval, repeats: true) { [weak self] _ in
@@ -72,6 +113,7 @@ final class AgentSleepController {
 
     func lockEnded() {
         locked = false
+        stopMouseMonitors()
         timer?.invalidate()
         timer = nil
         releaseHolds = nil
@@ -92,7 +134,7 @@ final class AgentSleepController {
             policyState,
             enabled: enabled,
             locked: locked,
-            workingSessions: activity.workingSessions(at: now),
+            activeSessions: activity.activeSessions(at: now),
             now: now,
             delay: delay
         )

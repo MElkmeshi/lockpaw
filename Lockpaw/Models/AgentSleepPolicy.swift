@@ -1,7 +1,8 @@
 import Foundation
 
-/// "Sleep when agents finish": while locked, once every agent session Lockpaw saw working
-/// has gone quiet for the chosen delay, put the Mac to sleep. A pure reducer, so every
+/// "Sleep when agents finish": while locked, once every agent session Lockpaw saw active
+/// (working, running a command, or waiting on the user) has finished and the chosen delay
+/// has passed, put the Mac to sleep. A pure reducer, so every
 /// branch is unit-tested. `AgentSleepController` gathers the inputs and runs the actions.
 enum AgentSleepPolicy {
     /// Checkbox, off by default.
@@ -17,11 +18,11 @@ enum AgentSleepPolicy {
     }
 
     struct State: Equatable {
-        /// A tracked session was working at some point during this lock. Nothing happens
+        /// A tracked session was active at some point during this lock. Nothing happens
         /// without it: a lock with no agent Lockpaw can see (Codex, Cursor, Copilot and
         /// Aider only say when they finish) keeps the Mac awake, as before.
         var sawWork = false
-        /// When the last working session went quiet.
+        /// When the last active session finished.
         var idleSince: Date?
         /// Sleep was requested for this quiet spell. The sleep holds stay released, so the
         /// Mac can sleep on its own again after a wake, until an agent starts working.
@@ -40,7 +41,7 @@ enum AgentSleepPolicy {
         _ state: State,
         enabled: Bool,
         locked: Bool,
-        workingSessions: Int,
+        activeSessions: Int,
         now: Date,
         delay: TimeInterval
     ) -> (State, Action) {
@@ -49,7 +50,7 @@ enum AgentSleepPolicy {
         guard enabled else { return (State(), state.released ? .restoreHolds : .none) }
 
         var next = state
-        if workingSessions > 0 {
+        if activeSessions > 0 {
             next.sawWork = true
             next.idleSince = nil
             guard state.released else { return (next, .none) }

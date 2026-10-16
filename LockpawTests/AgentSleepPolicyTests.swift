@@ -11,7 +11,7 @@ final class AgentSleepPolicyTests: XCTestCase {
         enabled: Bool = true, locked: Bool = true, working: Int, at seconds: TimeInterval
     ) -> (AgentSleepPolicy.State, AgentSleepPolicy.Action) {
         AgentSleepPolicy.step(
-            state, enabled: enabled, locked: locked, workingSessions: working,
+            state, enabled: enabled, locked: locked, activeSessions: working,
             now: t0.addingTimeInterval(seconds), delay: delay
         )
     }

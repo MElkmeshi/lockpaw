@@ -35,7 +35,7 @@
 - **Agents keep running.** AI coding tools, builds, downloads and SSH sessions carry on underneath.
 - **Agent alerts.** The locked screen glows when Claude Code, Codex, Gemini, Cursor, Copilot or Aider needs you, and the notification says which agent and why.
 - **Lid closed, still running.** Optional. Close the MacBook lid while locked and your agents keep going, no external display needed. It uses one small helper you approve once, and sleep comes back when you unlock, when the Mac runs hot, or at 20% battery.
-- **Sleep when agents finish.** Optional. While locked, the Mac goes to sleep once every Claude Code and Gemini CLI session that was working has finished and stayed quiet for a few minutes.
+- **Sleep when agents finish.** Optional. While locked, the Mac goes to sleep a few minutes after every Claude Code and Gemini CLI session has finished its turn. A session running a command or waiting for you keeps it awake.
 - **Pings on your phone.** Optional. Forward agent pings to ntfy, Pushover or any webhook, such as Home Assistant.
 - **Shortcuts and Spotlight.** *Lock Screen* and *Is Lockpaw Locked?* actions. There's no unlock action, on purpose.
 - **Fade to black.** Optionally dims the lock screen to pure black after a while (good for OLED) without sleeping the display.
@@ -78,9 +78,9 @@ including installing itself into `~/.local/bin` (add `--print` to just see the s
 
 | Agent | Setup | What it hooks |
 |-------|-------|---------------|
-| **Claude Code** | `lockpaw install-hook claude` | `Notification` + `Stop` + `StopFailure` hooks in `~/.claude/settings.json` (honors `$CLAUDE_CONFIG_DIR`); `Notification` is matched to the types that need you, so `auth_success` and the like stay quiet. Also `UserPromptSubmit` + `PostToolUse` + `SessionEnd` → `lockpaw activity`, which tells Lockpaw a session is working (for *Sleep when agents finish*; never glows) |
+| **Claude Code** | `lockpaw install-hook claude` | `Notification` + `Stop` + `StopFailure` hooks in `~/.claude/settings.json` (honors `$CLAUDE_CONFIG_DIR`); `Notification` is matched to the types that need you, so `auth_success` and the like stay quiet. With *Sleep when agents finish* on, also `UserPromptSubmit` + `PreToolUse` + `PostToolUse` + `SessionEnd` → `lockpaw activity` (`install-hook claude --activity`; never glows) |
 | **Codex CLI** | `lockpaw install-hook codex` | `notify` in `~/.codex/config.toml` for *finished*, plus a `PermissionRequest` hook in `~/.codex/hooks.json` for *waiting* — trust it once via `/hooks` in Codex (honors `$CODEX_HOME`) |
-| **Gemini CLI** | `lockpaw install-hook gemini` | `Notification` + `AfterAgent` hooks in `~/.gemini/settings.json`, plus `BeforeAgent` + `AfterTool` + `SessionEnd` → `lockpaw activity` |
+| **Gemini CLI** | `lockpaw install-hook gemini` | `Notification` + `AfterAgent` hooks in `~/.gemini/settings.json`; with *Sleep when agents finish* on, also `BeforeAgent` + `BeforeTool` + `AfterTool` + `SessionEnd` → `lockpaw activity` |
 | **Cursor** | `lockpaw install-hook cursor` | `stop` hook in `~/.cursor/hooks.json` (`--done`) |
 | **Copilot CLI** | `lockpaw install-hook copilot` | `agentStop` + `notification` hooks in `~/.copilot/hooks/lockpaw.json` (honors `$COPILOT_HOME`) |
 | **Aider** | `lockpaw install-hook aider` | `notifications-command` in `~/.aider.conf.yml` |
