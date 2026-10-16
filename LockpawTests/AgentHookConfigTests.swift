@@ -156,4 +156,33 @@ final class AgentHookConfigTests: XCTestCase {
         }
         XCTAssertTrue(result.hasPrefix(notify))
     }
+
+    // MARK: - Activity hooks ("Sleep when agents finish")
+
+    func testActivityHooks_liveBesideThePings_andUpgradeInPlace() {
+        let activity = "\"$HOME/.local/bin/lockpaw\" activity --agent claude"
+        let withPings = merged([:])
+        let events = AgentHookConfig.claudeActivityEvents
+        let both = AgentHookConfig.mergingPingHook(
+            into: withPings, events: events, command: activity,
+            isOwnCommand: AgentHookConfig.isLockpawActivityCommand
+        )
+        for event in events {
+            XCTAssertEqual(groups(both, event).flatMap(commands), [activity], event)
+        }
+        XCTAssertEqual(groups(both, "Stop").flatMap(commands), [command], "the ping hooks are untouched")
+
+        // Re-running (or a newer command) replaces, never duplicates.
+        let newer = activity + " --x"
+        let again = AgentHookConfig.mergingPingHook(
+            into: both, events: events, command: newer,
+            isOwnCommand: AgentHookConfig.isLockpawActivityCommand
+        )
+        XCTAssertEqual(groups(again, "PostToolUse").flatMap(commands), [newer])
+    }
+
+    func testPingAndActivityMatchers_neverClaimEachOther() {
+        XCTAssertFalse(AgentHookConfig.isLockpawPingCommand("\"$HOME/.local/bin/lockpaw\" activity --agent claude"))
+        XCTAssertFalse(AgentHookConfig.isLockpawActivityCommand("\"$HOME/.local/bin/lockpaw\" ping --agent claude"))
+    }
 }

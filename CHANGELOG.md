@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **Sleep when agents finish** (Settings → Agents, off by default). While locked, once every Claude Code and Gemini CLI session that was working has finished and stayed quiet for 5, 15 or 30 minutes, Lockpaw puts the Mac to sleep, lifting lid-closed mode first. It stays locked, and after a wake the Mac sleeps on its own schedule again until an agent starts working. Lockpaw can only wait for agents that say when a turn *starts*. Codex, Cursor, Copilot and Aider only report when they finish, so a lock with nothing it can track never sleeps, and the Mac won't sleep while someone is typing at the lock screen. The new `lockpaw activity` hooks (`UserPromptSubmit`, `PostToolUse`, `SessionEnd` for Claude; `BeforeAgent`, `AfterTool`, `SessionEnd` for Gemini) send only the agent, the event and the session id, and never glow the screen. Re-run `lockpaw install-hook claude` or `gemini`, or click the agent in Settings → Agents, to add them.
+
 ## [1.6.1] - 2026-10-15
 
 ### Security

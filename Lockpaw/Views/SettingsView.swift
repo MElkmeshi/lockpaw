@@ -120,6 +120,8 @@ struct SettingsView: View {
     @AppStorage(Constants.showMenuBarIconKey) private var showMenuBarIcon = true
     @AppStorage(Constants.lidClosedModeKey) private var lidClosedMode = false
     @AppStorage(Constants.unlockWithMacKey) private var unlockWithMac = false
+    @AppStorage(AgentSleepPolicy.enabledKey) private var sleepWhenAgentsFinish = false
+    @AppStorage(AgentSleepPolicy.delayKey) private var sleepWhenAgentsFinishDelay = AgentSleepPolicy.defaultDelayMinutes
 
     @ObservedObject var updateCheckViewModel: UpdateCheckViewModel
     @ObservedObject private var customMascot = CustomMascot.shared
@@ -811,6 +813,27 @@ struct SettingsView: View {
                         .foregroundStyle(.secondary)
                         .textSelection(.enabled)
                         .padding(.horizontal, 4)
+                }
+            }
+
+            SettingsPanel {
+                SettingsRow(
+                    "Sleep when agents finish",
+                    subtitle: "While locked, put the Mac to sleep once every Claude Code and Gemini CLI session that was working has finished. Other agents only say when they finish, so Lockpaw can't wait for them. Connected before this version? Connect Claude or Gemini again."
+                ) {
+                    SettingsCheckbox(isOn: $sleepWhenAgentsFinish)
+                }
+
+                if sleepWhenAgentsFinish {
+                    SettingsDivider()
+
+                    SettingsRow("Sleep after", subtitle: "How long every agent has to stay quiet first.") {
+                        SettingsSegmentedControl(
+                            selection: $sleepWhenAgentsFinishDelay,
+                            options: AgentSleepPolicy.delayOptions.map { ("\($0) min", $0) },
+                            width: 210
+                        )
+                    }
                 }
             }
 

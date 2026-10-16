@@ -26,6 +26,17 @@ enum AgentHookConfig {
         command.contains("lockpaw") && command.contains("ping")
     }
 
+    /// Matches the hook that runs `lockpaw activity` ("Sleep when agents finish").
+    static func isLockpawActivityCommand(_ command: String) -> Bool {
+        command.contains("lockpaw") && command.contains("activity")
+    }
+
+    /// Claude Code events reported by `lockpaw activity`: a prompt starts a turn, every
+    /// finished tool is a sign of life, and the session closing ends it.
+    static let claudeActivityEvents = ["UserPromptSubmit", "PostToolUse", "SessionEnd"]
+    /// Gemini CLI's equivalents.
+    static let geminiActivityEvents = ["BeforeAgent", "AfterTool", "SessionEnd"]
+
     /// Merge a lockpaw ping into a Claude Code-style `hooks` object — the schema Gemini
     /// CLI adopted too: each event maps to an array of groups, each group holding a
     /// `hooks` array of {type, command} entries. Upgrades any existing lockpaw entry in
@@ -38,7 +49,8 @@ enum AgentHookConfig {
         events: [String],
         command: String,
         matchers: [String: String] = [:],
-        hookFields: [String: Any] = [:]
+        hookFields: [String: Any] = [:],
+        isOwnCommand: (String) -> Bool = isLockpawPingCommand
     ) -> [String: Any] {
         var root = root
         var hooks = root["hooks"] as? [String: Any] ?? [:]
@@ -49,7 +61,7 @@ enum AgentHookConfig {
                 guard var inner = groups[g]["hooks"] as? [[String: Any]] else { continue }
                 var ownsGroup = !inner.isEmpty
                 for h in inner.indices {
-                    if let cmd = inner[h]["command"] as? String, isLockpawPingCommand(cmd) {
+                    if let cmd = inner[h]["command"] as? String, isOwnCommand(cmd) {
                         inner[h]["command"] = command
                         inner[h].merge(hookFields) { _, new in new }
                         present = true

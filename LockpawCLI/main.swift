@@ -34,6 +34,9 @@ func printUsage() {
                                     on stdin adds the project and the reason.
                                     --done | --waiting | --error say what happened when
                                     the payload doesn't. --print shows what would be sent.
+      lockpaw activity              Report that an agent session is working or has ended,
+                                    from a hook payload on stdin. Feeds "Sleep when agents
+                                    finish"; never glows the screen. --print shows it.
       lockpaw install-cli           Symlink this tool into your PATH (~/.local/bin)
       lockpaw install-hook <tool>   Wire up an agent. <tool>: claude | codex | gemini |
                                     cursor | copilot | aider
@@ -86,6 +89,23 @@ func sendPing(arguments: [String], printOnly: Bool) {
         Notification.Name(pingNotificationName),
         object: nil,
         userInfo: info.isEmpty ? nil : info,
+        deliverImmediately: true
+    )
+}
+
+func sendActivity(arguments: [String], printOnly: Bool) {
+    guard let info = AgentActivity.userInfo(arguments: arguments, stdinPayload: readHookPayload()) else {
+        if printOnly { print("(not an activity event, or no session id: nothing sent)") }
+        return
+    }
+    if printOnly {
+        for key in info.keys.sorted() { print("\(key): \(info[key] ?? "")") }
+        return
+    }
+    DistributedNotificationCenter.default().postNotificationName(
+        Notification.Name(AgentActivity.distributedName),
+        object: nil,
+        userInfo: info,
         deliverImmediately: true
     )
 }
@@ -203,6 +223,11 @@ func shellPingCommand(agent: String, kind: AgentPing.KindFlag? = nil) -> String 
     "\"$HOME/.local/bin/lockpaw\" ping --agent \(agent)" + (kind.map { " \($0.flag)" } ?? "")
 }
 
+/// Same form as the ping command, for the activity hooks behind "Sleep when agents finish".
+func shellActivityCommand(agent: String) -> String {
+    "\"$HOME/.local/bin/lockpaw\" activity --agent \(agent)"
+}
+
 /// The command points at the ~/.local/bin symlink; bail out if it can't be created.
 func requireCLISymlink() {
     do {
@@ -235,14 +260,22 @@ func installClaudeHook(printOnly: Bool) {
     let events = ["Notification", "Stop", "StopFailure"]
     let command = shellPingCommand(agent: "claude")
     let matchers = ["Notification": AgentHookConfig.claudeNotificationMatcher]
+    let activityEvents = AgentHookConfig.claudeActivityEvents
+    let activityCommand = shellActivityCommand(agent: "claude")
     if printOnly {
         print(claudeStyleSnippet(path: url.path, events: events, command: command, matchers: matchers))
+        print("\nFor \"Sleep when agents finish\", also:\n")
+        print(claudeStyleSnippet(path: url.path, events: activityEvents, command: activityCommand))
         return
     }
     requireCLISymlink()
+    let withPings = AgentHookConfig.mergingPingHook(
+        into: readJSONObject(at: url), events: events, command: command, matchers: matchers
+    )
     writeJSON(
         AgentHookConfig.mergingPingHook(
-            into: readJSONObject(at: url), events: events, command: command, matchers: matchers
+            into: withPings, events: activityEvents, command: activityCommand,
+            isOwnCommand: AgentHookConfig.isLockpawActivityCommand
         ),
         to: url, label: "Claude Code"
     )
@@ -342,9 +375,18 @@ func installGeminiHook(printOnly: Bool) {
     let url = homeDirectory().appendingPathComponent(".gemini/settings.json")
     let events = ["Notification", "AfterAgent"]
     let command = shellPingCommand(agent: "gemini")
-    if printOnly { print(claudeStyleSnippet(path: url.path, events: events, command: command)); return }
+    let activityEvents = AgentHookConfig.geminiActivityEvents
+    let activityCommand = shellActivityCommand(agent: "gemini")
+    if printOnly {
+        print(claudeStyleSnippet(path: url.path, events: events, command: command))
+        print("\nFor \"Sleep when agents finish\", also:\n")
+        print(claudeStyleSnippet(path: url.path, events: activityEvents, command: activityCommand))
+        return
+    }
     requireCLISymlink()
-    writeJSON(AgentHookConfig.mergingPingHook(into: readJSONObject(at: url), events: events, command: command),
+    let withPings = AgentHookConfig.mergingPingHook(into: readJSONObject(at: url), events: events, command: command)
+    writeJSON(AgentHookConfig.mergingPingHook(into: withPings, events: activityEvents, command: activityCommand,
+                                              isOwnCommand: AgentHookConfig.isLockpawActivityCommand),
               to: url, label: "Gemini CLI")
 }
 
@@ -495,6 +537,8 @@ switch args.first {
 case "ping":
     // Unknown trailing args are ignored — Codex appends a JSON payload to the notify program.
     sendPing(arguments: args, printOnly: args.contains("--print"))
+case "activity":
+    sendActivity(arguments: args, printOnly: args.contains("--print"))
 case "install-cli":
     installCLI()
 case "install-hook":
